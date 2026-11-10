@@ -17,12 +17,21 @@ jobs:
       OCI_CLI_USER: ${{ secrets.OCI_USER }}
       OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY }}
       OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_CLI_KEY_FILE: /home/runner/oci_key.pem
       OCI_CLI_REGION: eu-paris-1
       STACK: ${{ secrets.OCI_STACK_ID }}
     steps:
       - name: Installer l'outil Oracle (OCI CLI)
         run: pip install --quiet oci-cli
+
+      - name: Preparer la cle
+        env:
+          KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$KEY" | tr -d '\r' | sed -n '/-----BEGIN/,/-----END/p' > "$OCI_CLI_KEY_FILE"
+          chmod 600 "$OCI_CLI_KEY_FILE"
+          echo "Lignes dans la cle : $(wc -l < "$OCI_CLI_KEY_FILE")"
+          grep -q "BEGIN PRIVATE KEY\|BEGIN RSA PRIVATE KEY" "$OCI_CLI_KEY_FILE" && echo "Cle privee OK" || echo "ATTENTION : ce n'est pas une cle PRIVEE"
 
       - name: Deja reussi ? Alors on ne fait rien
         id: check
