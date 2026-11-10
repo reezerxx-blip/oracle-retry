@@ -1,0 +1,52 @@
+name: Oracle - creer la machine
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # toutes les 10 minutes
+  workflow_dispatch:          # bouton "Run workflow" pour lancer a la main
+
+concurrency:
+  group: oracle-retry
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_USER }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_CLI_REGION: eu-paris-1
+      STACK: ${{ secrets.OCI_STACK_ID }}
+    steps:
+      - name: Installer l'outil Oracle (OCI CLI)
+        run: pip install --quiet oci-cli
+
+      - name: Deja reussi ? Alors on ne fait rien
+        id: check
+        run: |
+          OK=$(oci resource-manager job list --stack-id "$STACK" --all \
+            --query "length(data[?operation=='APPLY' && \"lifecycle-state\"=='SUCCEEDED'])" \
+            --raw-output)
+          echo "Jobs reussis : $OK"
+          if [ "$OK" != "0" ]; then
+            echo "La machine existe deja. Pense a desactiver ce workflow."
+            echo "done=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Essayer de creer la machine
+        if: steps.check.outputs.done != 'true'
+        run: |
+          STATE=$(oci resource-manager job create-apply-job --stack-id "$STACK" \
+            --execution-plan-strategy AUTO_APPROVED \
+            --wait-for-state SUCCEEDED --wait-for-state FAILED \
+            --max-wait-seconds 420 \
+            --query 'data."lifecycle-state"' --raw-output || true)
+          echo "Resultat : $STATE"
+          if [ "$STATE" = "SUCCEEDED" ]; then
+            echo "MACHINE CREEE !"
+          else
+            echo "Pas de place pour l'instant, nouvel essai dans 10 min."
+          fi
