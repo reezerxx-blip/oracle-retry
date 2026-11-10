@@ -5,6 +5,9 @@ on:
     - cron: "*/10 * * * *"   # toutes les 10 minutes
   workflow_dispatch:          # bouton "Run workflow" pour lancer a la main
 
+permissions:
+  actions: write
+
 concurrency:
   group: oracle-retry
   cancel-in-progress: false
@@ -46,6 +49,7 @@ jobs:
           fi
 
       - name: Essayer de creer la machine
+        id: try
         if: steps.check.outputs.done != 'true'
         run: |
           STATE=$(oci resource-manager job create-apply-job --stack-id "$STACK" \
@@ -56,6 +60,16 @@ jobs:
           echo "Resultat : $STATE"
           if [ "$STATE" = "SUCCEEDED" ]; then
             echo "MACHINE CREEE !"
+            echo "created=true" >> "$GITHUB_OUTPUT"
           else
             echo "Pas de place pour l'instant, nouvel essai dans 10 min."
           fi
+
+      - name: "URGENT URGENT - MACHINE ORACLE CREEE"
+        if: steps.try.outputs.created == 'true' || steps.check.outputs.done == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow disable oracle-retry.yml --repo "$GITHUB_REPOSITORY" || true
+          echo "::error title=URGENT URGENT::MACHINE ORACLE CREEE ! Va sur Oracle > Compute > Instances. Les essais sont arretes."
+          exit 1
